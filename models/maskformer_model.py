@@ -336,6 +336,7 @@ class MaskFormer(nn.Module):
         )  # * [res2, res3, res4, res5] --> [bs*5, 256, 56, 56]\[bs*5, 512, 28, 28]\[bs*5, 1024, 14, 14]\[bs*5, 2048, 7, 7]
 
         if self.use_pre_sam:
+            pre_sam_masks = [pre_sam_masks[-2]]
             pre_sam_masks = [(x - self.pixel_mean) / self.pixel_std for x in pre_sam_masks]
             pre_sam_masks = ImageList.from_tensors(pre_sam_masks, self.size_divisibility)
 
