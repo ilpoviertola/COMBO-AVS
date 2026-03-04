@@ -92,7 +92,7 @@ class MaskFormer(nn.Module):
             self.scale_factor_module = scale_factor_module  # * add scale factor module
         else:
             self.pre_sam_backbone = None
-        
+
         # * Audio module
         self.audio_backbone = audio_backbone  # * add audio backbone
         # * add audio transformation
@@ -142,9 +142,9 @@ class MaskFormer(nn.Module):
 
         if use_pre_sam:
             #* separate backbone
-            pre_sam_backbone = build_backbone(cfg)  
+            pre_sam_backbone = build_backbone(cfg)
             #* share backbone
-            # pre_sam_backbone = backbone 
+            # pre_sam_backbone = backbone
             scale_factor_module = nn.ModuleList()
             for dim in pre_sam_dim:
                 scale_factor_module.append(channel_weighted_block(dim))
@@ -196,7 +196,7 @@ class MaskFormer(nn.Module):
             num_points=cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS,
         )
 
- 
+
         weight_dict = {
             "loss_ce": class_weight,
             "loss_mask": mask_weight,
@@ -206,7 +206,8 @@ class MaskFormer(nn.Module):
         if deep_supervision:
             dec_layers = cfg.MODEL.MASK_FORMER.DEC_LAYERS
             aux_weight_dict = {}
-            for i in range(dec_layers - 1):
+            for i in torch.range(0, dec_layers - 1):
+                i = int(i)
                 aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
             weight_dict.update(aux_weight_dict)
 
@@ -328,7 +329,7 @@ class MaskFormer(nn.Module):
             audio_feature = self.audio_backbone(audio_log_mels)  # * [bs*5, 128]
         audio_feature = audio_feature.unsqueeze(1)
         if self.is_avss_data:
-            audio_feature = audio_feature[vid_temporal_mask_flag.bool()]  
+            audio_feature = audio_feature[vid_temporal_mask_flag.bool()]
 
         features = self.backbone(
             images.tensor
@@ -413,7 +414,7 @@ class MaskFormer(nn.Module):
             ):
                 if num_img % self.num_frames == 0:
                     num_video += 1
-                    input_per_image = batched_inputs[num_video]  
+                    input_per_image = batched_inputs[num_video]
 
                 height = input_per_image.get("height", image_size[0])
                 width = input_per_image.get("width", image_size[1])
@@ -436,7 +437,7 @@ class MaskFormer(nn.Module):
                 # visual_middle_features = True
                 # if visual_middle_features:
                 #     return processed_results, mask_pred_results
-            
+
 
             return processed_results
 

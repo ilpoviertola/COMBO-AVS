@@ -106,11 +106,11 @@ class MaskFormerHead(nn.Module):
         # fusion module for late fusion
         if cfg.MODEL.FUSE_CONFIG.FUSION_STEP == "late":
             if cfg.MODEL.FUSE_CONFIG.QUERIES_FUSE_TYPE == "dim":
-                audio_out_dim = 128  
+                audio_out_dim = 128
             else:
-                audio_out_dim = 256  
+                audio_out_dim = 256
             cfg.defrost()
-            cfg.MODEL.FUSE_CONFIG.AUDIO_OUT_DIM = audio_out_dim  
+            cfg.MODEL.FUSE_CONFIG.AUDIO_OUT_DIM = audio_out_dim
             cfg.freeze()
             fusion_module = AVFuse(cfg)
             # audio transformation
@@ -144,13 +144,14 @@ class MaskFormerHead(nn.Module):
         if self.late_fusion:
             # * Late fusion
             fused_visual_features = {}
-            fused_visual_features["res2"] = mask_features  # * Only fuse the mask features, for convenience, we use 'res2' as the key.
+            fused_key = self.fusion_module.fused_backbone[0]
+            fused_visual_features[fused_key] = mask_features  # * Only fuse the mask features, for convenience, we use 'res2' as the key.
             fusion_feature = self.fusion_module(fused_visual_features, audio_feature)
             fused_visual_features = fusion_feature["visual"]
             fusion_audio_feature = fusion_feature["audio"]
             fusion_audio_feature = self.audio_transformation(fusion_audio_feature)  # * [bs*5, 256*N]
             if self.transformer_in_feature == "multi_scale_pixel_decoder":
-                predictions = self.predictor(multi_scale_features, fusion_audio_feature, fused_visual_features["res2"], mask)
+                predictions = self.predictor(multi_scale_features, fusion_audio_feature, fused_visual_features[fused_key], mask)
 
         else:
             if self.transformer_in_feature == "multi_scale_pixel_decoder":

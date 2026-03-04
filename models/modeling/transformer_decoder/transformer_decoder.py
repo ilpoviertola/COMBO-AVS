@@ -10,6 +10,7 @@ from detectron2.config import configurable
 from detectron2.layers import Conv2d
 from detectron2.utils.registry import Registry
 from .position_encoding import PositionEmbeddingSine
+from ..scaler import ConvScalerFixedDepth
 
 
 TRANSFORMER_DECODER_REGISTRY = Registry("TRANSFORMER_MODULE")
@@ -290,8 +291,8 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
 
         # positional encoding
         N_steps = hidden_dim // 2
-        self.pe_layer = PositionEmbeddingSine(N_steps, normalize=True)  
-        
+        self.pe_layer = PositionEmbeddingSine(N_steps, normalize=True)
+
         # define Transformer decoder here
         self.num_heads = nheads
         self.num_layers = dec_layers
@@ -338,15 +339,15 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         query_feat_dim = hidden_dim
         if self.queries_fuse_type == "dim":
             query_feat_dim = hidden_dim - self.audio_out_dim
-        self.query_feat = nn.Embedding(num_queries, query_feat_dim)  
+        self.query_feat = nn.Embedding(num_queries, query_feat_dim)
         # self.query_feat = nn.Embedding(num_queries * num_frames, query_feat_dim)
 
         # learnable query p.e.
-        self.query_embed = nn.Embedding(num_queries, hidden_dim)  
+        self.query_embed = nn.Embedding(num_queries, hidden_dim)
         # self.query_embed = nn.Embedding(num_queries * num_frames, hidden_dim)
 
         # level embedding (we always use 3 scales)
-        self.num_feature_levels = 3
+        self.num_feature_levels = 1
         self.level_embed = nn.Embedding(self.num_feature_levels, hidden_dim)
         self.input_proj = nn.ModuleList()
         for _ in range(self.num_feature_levels):
@@ -364,6 +365,10 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         # others
         self.dataset_name = dataset_name
         self.use_cosine_loss = use_cosine_loss
+        if self.num_feature_levels == 1:
+            self.scaler = ConvScalerFixedDepth(depth=2, embed_dim=hidden_dim)
+        else:
+            self.scaler = nn.Identity()
 
 
     @classmethod
@@ -404,11 +409,10 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
 
     def forward(self, x, audio_features, mask_features, mask=None):
         # x is a list of multi-scale feature
-     
+
         bt, c_m, h_m, w_m = mask_features.shape
 
-      
-        assert len(x) == self.num_feature_levels
+        assert len(x) == self.num_feature_levels, f"{len(x)} != {self.num_feature_levels}"
         src = []
         pos = []
         size_list = []
@@ -417,7 +421,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         del mask
 
         for i in range(self.num_feature_levels):
-           
+
             size_list.append(x[i].shape[-2:])  # * [7,7] [14,14] [28,28]
             pos.append(self.pe_layer(x[i], None).flatten(2))
             src.append(self.input_proj[i](x[i]).flatten(2) + self.level_embed.weight[i][None, :, None])
@@ -427,14 +431,14 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
 
         # * NOTE: For avs, we change it with time sequence.
         # QxNxC
-        # query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bs, 1) 
+        # query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bs, 1)
         query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bt, 1)
         query_embed = query_embed.reshape(self.num_queries, -1, query_embed.shape[-1])
-        # output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1) 
+        # output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)
         output = self.query_feat.weight.unsqueeze(1).repeat(1, bt, 1)
         output = output.reshape(self.num_queries, -1, output.shape[-1])  # * output is equal to query_feat
-      
-        audio_features = audio_features.repeat(1, self.num_queries, 1).reshape(self.num_queries, -1, audio_features.shape[-1])  
+
+        audio_features = audio_features.repeat(1, self.num_queries, 1).reshape(self.num_queries, -1, audio_features.shape[-1])
 
         if self.queries_fuse_type == "add":
             output = output + audio_features
@@ -446,13 +450,13 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
             pass
         predictions_class = []
         predictions_mask = []
-        middles_attn_mask = [] 
+        middles_attn_mask = []
         # prediction heads on learnable query features
         outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[0])
         predictions_class.append(outputs_class)
         predictions_mask.append(outputs_mask)
         if self.use_cosine_loss:
-            middles_attn_mask.append(outputs_mask.reshape(bt, self.num_queries, -1))  
+            middles_attn_mask.append(outputs_mask.reshape(bt, self.num_queries, -1))
         for i in range(self.num_layers):
             level_index = i % self.num_feature_levels
             attn_mask[torch.where(attn_mask.sum(-1) == attn_mask.shape[-1])] = False
@@ -479,7 +483,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
                 if i == self.num_layers - 1:  #! without the last layer
                     continue
                 else:
-                    middles_attn_mask.append(outputs_mask.reshape(bt, self.num_queries, -1))  
+                    middles_attn_mask.append(outputs_mask.reshape(bt, self.num_queries, -1))
         assert len(predictions_class) == self.num_layers + 1
 
         out = {
@@ -495,6 +499,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         decoder_output = decoder_output.transpose(0, 1)
         outputs_class = self.class_embed(decoder_output)
         mask_embed = self.mask_embed(decoder_output)
+        mask_features = self.scaler(mask_features)
         outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
 
         # NOTE: prediction is of higher-resolution

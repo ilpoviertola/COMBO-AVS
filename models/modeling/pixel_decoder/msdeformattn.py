@@ -236,16 +236,16 @@ class MSDeformAttnPixelDecoder(nn.Module):
             nn.init.xavier_uniform_(proj[0].weight, gain=1)
             nn.init.constant_(proj[0].bias, 0)
 
-        self.transformer = MSDeformAttnTransformerEncoderOnly(
-            d_model=conv_dim,
-            dropout=transformer_dropout,
-            nhead=transformer_nheads,
-            dim_feedforward=transformer_dim_feedforward,
-            num_encoder_layers=transformer_enc_layers,
-            num_feature_levels=self.transformer_num_feature_levels,
-        )
-        N_steps = conv_dim // 2
-        self.pe_layer = PositionEmbeddingSine(N_steps, normalize=True)
+        # self.transformer = MSDeformAttnTransformerEncoderOnly(
+        #     d_model=conv_dim,
+        #     dropout=transformer_dropout,
+        #     nhead=transformer_nheads,
+        #     dim_feedforward=transformer_dim_feedforward,
+        #     num_encoder_layers=transformer_enc_layers,
+        #     num_feature_levels=self.transformer_num_feature_levels,
+        # )
+        # N_steps = conv_dim // 2
+        # self.pe_layer = PositionEmbeddingSine(N_steps, normalize=True)
 
         self.mask_dim = mask_dim
         # use 1x1 conv instead
@@ -258,7 +258,7 @@ class MSDeformAttnPixelDecoder(nn.Module):
         )
         weight_init.c2_xavier_fill(self.mask_features)
 
-        self.maskformer_num_feature_levels = 3  # always use 3 scales
+        self.maskformer_num_feature_levels = 1  # always use 3 scales
         self.common_stride = common_stride
 
         # extra fpn levels
@@ -314,30 +314,32 @@ class MSDeformAttnPixelDecoder(nn.Module):
 
     @autocast(enabled=False)
     def forward_features(self, features):
-        srcs = []
-        pos = []
-        # Reverse feature maps into top-down order (from low to high resolution)
-        for idx, f in enumerate(self.transformer_in_features[::-1]):  # * ['res3', 'res4', 'res5']
-            x = features[f].float()  # deformable detr does not support half precision
-            srcs.append(self.input_proj[idx](x))
-            pos.append(self.pe_layer(x))
+        # srcs = []
+        # pos = []
+        # # Reverse feature maps into top-down order (from low to high resolution)
+        # for idx, f in enumerate(self.transformer_in_features[::-1]):  # * ['res3', 'res4', 'res5']
+        #     x = features[f].float()  # deformable detr does not support half precision
+        #     srcs.append(self.input_proj[idx](x))
+        #     pos.append(self.pe_layer(x))
 
-        y, spatial_shapes, level_start_index = self.transformer(srcs, pos)
+        # y, spatial_shapes, level_start_index = self.transformer(srcs, pos)
+        y = self.input_proj[0](features[self.transformer_in_features[-1]].float())
         bs = y.shape[0]
 
-        split_size_or_sections = [None] * self.transformer_num_feature_levels
-        for i in range(self.transformer_num_feature_levels):
-            if i < self.transformer_num_feature_levels - 1:
-                split_size_or_sections[i] = level_start_index[i + 1] - level_start_index[i]
-            else:
-                split_size_or_sections[i] = y.shape[1] - level_start_index[i]
-        y = torch.split(y, split_size_or_sections, dim=1)
+        # split_size_or_sections = [None] * self.transformer_num_feature_levels
+        # for i in range(self.transformer_num_feature_levels):
+        #     if i < self.transformer_num_feature_levels - 1:
+        #         split_size_or_sections[i] = level_start_index[i + 1] - level_start_index[i]
+        #     else:
+        #         split_size_or_sections[i] = y.shape[1] - level_start_index[i]
+        # y = torch.split(y, split_size_or_sections, dim=1)
 
         out = []
         multi_scale_features = []
         num_cur_levels = 0
-        for i, z in enumerate(y):
-            out.append(z.transpose(1, 2).view(bs, -1, spatial_shapes[i][0], spatial_shapes[i][1]))
+        out = [y]
+        # for i, z in enumerate(y):
+        #     out.append(z.transpose(1, 2).view(bs, -1, spatial_shapes[i][0], spatial_shapes[i][1]))
 
         # append `out` with extra FPN levels
         # Reverse feature maps into top-down order (from low to high resolution)
