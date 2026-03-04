@@ -4,3 +4,6 @@ __pycache__
 *.pt
 *.pkl
 .vscode
+AVS_dataset/
+models/modeling/pixel_decoder/ops/
+checkpoints/

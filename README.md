@@ -38,10 +38,13 @@ This repository provides the PyTorch implementation for the paper "Cooperation D
 - Linux or macOS with Python ≥ 3.6
 
 ```shell
-# recommended
+conda create -n combo python=3.8
+conda activate combo
+conda install conda-forge::cudatoolkit-dev
+conda install pytorch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 pytorch-cuda=11.7 -c pytorch -c nvidia
+python -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
 pip install -r requirements.txt
 pip install soundfile
-# build MSDeformAttention
 cd models/modeling/pixel_decoder/ops
 sh make.sh
 ```
@@ -58,7 +61,7 @@ sh make.sh
   Commenting out the following code in [L287](https://github.com/facebookresearch/detectron2/blob/cc9266c2396d5545315e3601027ba4bc28e8c95b/detectron2/checkpoint/c2_model_loading.py#L287) will allow the code to run without errors:
 
 ```python
-# raise ValueError("Cannot match one checkpoint key to multiple keys in the model.")  
+# raise ValueError("Cannot match one checkpoint key to multiple keys in the model.")
 ```
 
 - Install Semantic-SAM (Optional)
@@ -109,7 +112,7 @@ python3 avs_tools/process_avssimg2fixsize.py
 
 ```shell
 sh avs_tools/pre_mask/pre_mask_semantic_sam_s4.sh train # or ms3, avss
-sh avs_tools/pre_mask/pre_mask_semantic_sam_s4.sh val 
+sh avs_tools/pre_mask/pre_mask_semantic_sam_s4.sh val
 sh avs_tools/pre_mask/pre_mask_semantic_sam_s4.sh test
 ```
 
